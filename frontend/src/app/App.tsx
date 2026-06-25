@@ -214,15 +214,15 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback(async (files: File[]) => {
-    const images = files.filter(f => f.type.startsWith("image/"));
-    if (images.length === 0) return;
-    setFileCount(images.length);
+    const validFiles = files.filter(f => f.type.startsWith("image/") || f.type.startsWith("video/"));
+    if (validFiles.length === 0) return;
+    setFileCount(validFiles.length);
     setState("uploading");
     setProgress(10); // Fake progress to start
 
     const formData = new FormData();
-    for (const img of images) {
-      formData.append("files", img);
+    for (const file of validFiles) {
+      formData.append("files", file);
     }
 
     try {
@@ -235,7 +235,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
       
       setProgress(100);
       setState("success");
-      onUploaded(images);
+      onUploaded(validFiles);
     } catch (err) {
       console.error(err);
       alert("Yükleme sırasında hata oluştu. Lütfen tekrar deneyin.");
@@ -272,7 +272,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
         </div>
         <div className="text-center space-y-2">
           <p className="text-xl font-medium" style={{ fontFamily: "Playfair Display, serif", color: "#2A1A1F" }}>
-            Fotoğraflarınız başarıyla yüklendi.
+            Medya başarıyla yüklendi.
           </p>
           <p className="text-sm" style={{ color: "#8B6470" }}>
             Teşekkür ederiz. Anılarınız güvende. 🤍
@@ -283,7 +283,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
           className="mt-2 px-6 py-2.5 rounded-full text-sm font-medium border transition-all duration-300 hover:shadow-md"
           style={{ borderColor: "rgba(196,151,60,0.5)", color: "#9D5B6B", background: "rgba(157,91,107,0.06)" }}
         >
-          Başka Fotoğraf Yükle
+          Başka Medya Yükle
         </button>
       </div>
     );
@@ -304,7 +304,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
         </div>
         <div className="w-full max-w-xs space-y-3 text-center">
           <p className="text-sm font-medium" style={{ color: "#6B3A48" }}>
-            {fileCount} fotoğraf yükleniyor…
+            {fileCount} dosya yükleniyor…
           </p>
           <div className="relative h-2 rounded-full overflow-hidden" style={{ background: "rgba(157,91,107,0.12)" }}>
             <div
@@ -325,7 +325,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
       onDragLeave={onDragLeave}
       onClick={() => inputRef.current?.click()}
       role="button"
-      aria-label="Fotoğraf yükleme alanı"
+      aria-label="Medya yükleme alanı"
       className="relative cursor-pointer rounded-2xl border-2 border-dashed transition-all duration-300 py-14 px-8 flex flex-col items-center gap-5 group"
       style={{
         borderColor: state === "dragging" ? "#9D5B6B" : "rgba(157,91,107,0.35)",
@@ -338,7 +338,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
         ref={inputRef}
         type="file"
         multiple
-        accept="image/*"
+        accept="image/*,video/*"
         className="hidden"
         onChange={onInputChange}
       />
@@ -352,10 +352,10 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
 
       <div className="text-center space-y-2">
         <p className="text-base font-medium" style={{ fontFamily: "Playfair Display, serif", color: "#2A1A1F" }}>
-          Fotoğrafları Buraya Bırakın veya Seçin
+          Fotoğraf ve Videoları Buraya Bırakın veya Seçin
         </p>
         <p className="text-sm" style={{ color: "#8B6470" }}>
-          JPG, PNG, HEIC · Birden fazla dosya seçebilirsiniz
+          JPG, PNG, HEIC, MP4, MOV · Birden fazla dosya seçebilirsiniz
         </p>
       </div>
 
@@ -364,7 +364,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
         className="mt-1 px-8 py-3 rounded-full font-medium text-sm text-white transition-all duration-300 hover:shadow-lg hover:scale-105 active:scale-100"
         style={{ background: "linear-gradient(135deg, #9D5B6B 0%, #7A3F50 100%)" }}
       >
-        Fotoğraf Seç ve Yükle
+        Medya Seç ve Yükle
       </button>
 
       {state === "dragging" && (
@@ -411,7 +411,7 @@ function LandingPage({ onPhotosUploaded }: { onPhotosUploaded: (files: File[]) =
 
           <p className="hero-sub text-base md:text-lg leading-relaxed"
             style={{ color: "#9D5B6B", fontFamily: "Playfair Display, serif", fontStyle: "italic", fontSize: "clamp(1.2rem, 3.5vw, 1.8rem)", fontWeight: 400, margin: "0 auto" }}>
-            Bu özel günde çektiğiniz fotoğrafları aşağıdan yükleyebilirsiniz.
+            Bu özel günde çektiğiniz fotoğraf ve videoları aşağıdan yükleyebilirsiniz.
           </p>
         </div>
 
@@ -440,7 +440,7 @@ function LandingPage({ onPhotosUploaded }: { onPhotosUploaded: (files: File[]) =
 
         {/* Privacy note */}
         <p className="mt-6 text-xs text-center max-w-xs" style={{ color: "#8B6470" }}>
-          🔒 Fotoğraflarınız yalnızca çift tarafından görülebilir.
+          🔒 Dosyalarınız yalnızca çift tarafından görülebilir.
         </p>
 
         {/* Footer */}
@@ -731,7 +731,7 @@ function AdminDashboard({ uploadedPhotos, onLogout }: {
 
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <StatCard icon={Images} label="Toplam Fotoğraf" value={`${photos.length}`} sub="tüm zamanlar" />
+          <StatCard icon={Images} label="Toplam Medya" value={`${photos.length}`} sub="tüm zamanlar" />
           <StatCard icon={Calendar} label="Bugünkü Yükleme" value={`${todayCount}`} sub="son 24 saat" />
           <StatCard icon={HardDrive} label="Toplam Depolama" value={formatBytes(totalStorage)} sub="kullanılan alan" />
         </div>
@@ -792,14 +792,23 @@ function AdminDashboard({ uploadedPhotos, onLogout }: {
                   boxShadow: "0 2px 8px rgba(44,24,16,0.05)",
                 }}
               >
-                {/* Image */}
-                <div className="aspect-[4/3] overflow-hidden bg-rose-50">
-                  <img
-                    src={photo.url}
-                    alt={photo.name}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    loading="lazy"
-                  />
+                {/* Media */}
+                <div className="aspect-[4/3] overflow-hidden bg-rose-50 flex items-center justify-center">
+                  {photo.name.toLowerCase().match(/\.(mp4|mov|avi|mkv|webm)$/) ? (
+                    <video
+                      src={photo.url}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      controls
+                      preload="metadata"
+                    />
+                  ) : (
+                    <img
+                      src={photo.url}
+                      alt={photo.name}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                  )}
                 </div>
 
                 {/* Hover overlay */}
