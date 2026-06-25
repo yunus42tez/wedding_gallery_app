@@ -7,10 +7,16 @@ from alembic import context
 
 # Add backend directory to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend")))
+from dotenv import load_dotenv
+load_dotenv()
+
 from database import Base
 from models import Photo
 
 config = context.config
+db_url = os.getenv("DATABASE_URL")
+if db_url:
+    config.set_main_option("sqlalchemy.url", db_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

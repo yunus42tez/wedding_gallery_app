@@ -1,29 +1,17 @@
 version: '3.8'
 
 services:
-  db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: wedding_photos
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
-
   backend:
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
     volumes:
       - ./uploads:/app/uploads
-      - ./.env.example:/app/.env
+      - ./data:/app/data
+    env_file:
+      - .env
     ports:
       - "8000:8000"
-    depends_on:
-      - db
     restart: unless-stopped
 
   frontend:
@@ -36,5 +24,3 @@ services:
       - backend
     restart: unless-stopped
 
-volumes:
-  postgres_data:
