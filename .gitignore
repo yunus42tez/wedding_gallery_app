@@ -168,3 +168,7 @@ wedding_photos.db
 wedding_photos.db-journal
 uploads/
 .git-tmp/
+
+# Google Drive credentials (NEVER commit these)
+backend/credentials/
+service_account*.json

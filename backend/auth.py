@@ -5,9 +5,8 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from dotenv import load_dotenv
-from . import schemas
 
 load_dotenv()
 
@@ -18,6 +17,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 1 day
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/admin/login")
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
 
 def verify_password(plain_password, hashed_password):
     # In a real app we'd compare hashes. Since we're using .env, we'll do direct comparison.
@@ -44,7 +46,7 @@ def get_current_admin(token: str = Depends(oauth2_scheme)):
         username: str = payload.get("sub")
         if username is None:
             raise credentials_exception
-        token_data = schemas.TokenData(username=username)
+        token_data = TokenData(username=username)
     except (JWTError, ValidationError):
         raise credentials_exception
     

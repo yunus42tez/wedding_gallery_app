@@ -1,16 +1,16 @@
 import os
-import shutil
 import sys
 import uuid
-from datetime import datetime, date, timedelta
-from typing import List
+import tempfile
+import shutil
+from datetime import timedelta
+from typing import List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from sqlalchemy import func
+from pydantic import BaseModel
 from dotenv import load_dotenv
 
 # Ensure parent directory is in sys.path to support direct execution
@@ -18,13 +18,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 load_dotenv()
 
-import backend.models as models
-import backend.schemas as schemas
 import backend.auth as auth
-import backend.database as database
-from backend.database import engine, get_db
+import backend.drive_service as drive_service
 
-models.Base.metadata.create_all(bind=engine)
+# ── Google Drive setup ───────────────────────────────────────────
+_drive = drive_service.get_drive_service()
+_folder_id = drive_service.get_or_create_folder(_drive, folder_name="Wedday")
 
 app = FastAPI(title="Wedding Photo Upload App")
 
@@ -36,133 +35,144 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".mp4", ".mov", ".avi", ".mkv", ".webm"}
+
+# ── Pydantic Schemas ─────────────────────────────────────────────
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class PhotoResponse(BaseModel):
+    id: str
+    file_name: str
+    original_name: str
+    file_size: int
+    upload_date: str
+    mime_type: str
+
+class StatsResponse(BaseModel):
+    total_uploads: int
+    uploads_today: int
+    storage_usage: int
+
+# ── Endpoints ────────────────────────────────────────────────────
 
 @app.post("/api/upload", status_code=status.HTTP_201_CREATED)
 async def upload_photos(
     request: Request,
     files: List[UploadFile] = File(...),
-    db: Session = Depends(get_db)
 ):
-    uploaded_photos = []
-    
+    """Upload photos/videos to Google Drive."""
+    uploaded_count = 0
+
     for file in files:
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
             continue
-            
-        unique_filename = f"{uuid.uuid4().hex}{ext}"
-        file_path = os.path.join(UPLOAD_DIR, unique_filename)
-        
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        file_size = os.path.getsize(file_path)
-        
-        db_photo = models.Photo(
-            file_name=unique_filename,
-            original_name=file.filename,
-            file_size=file_size,
-            uploader_ip=request.client.host if request.client else None,
-            storage_path=file_path
-        )
-        db.add(db_photo)
-        db.commit()
-        db.refresh(db_photo)
-        
-        uploaded_photos.append(db_photo)
-        
-    if not uploaded_photos:
-        raise HTTPException(status_code=400, detail="No valid files uploaded.")
-        
-    return {"message": "Files uploaded successfully", "count": len(uploaded_photos)}
 
-@app.post("/api/admin/login", response_model=schemas.Token)
+        # Save to a temporary file, then upload to Drive
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            tmp_path = tmp.name
+
+        try:
+            drive_service.upload_file(_drive, tmp_path, file.filename, _folder_id)
+            uploaded_count += 1
+        finally:
+            os.unlink(tmp_path)
+
+    if uploaded_count == 0:
+        raise HTTPException(status_code=400, detail="No valid files uploaded.")
+
+    return {"message": "Files uploaded successfully", "count": uploaded_count}
+
+
+@app.post("/api/admin/login", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     admin_user = os.getenv("ADMIN_USERNAME", "ytez")
     admin_pass = os.getenv("ADMIN_PASSWORD", "aA123456")
-    
+
     if form_data.username != admin_user or form_data.password != admin_pass:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-        
+
     access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
         data={"sub": admin_user}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-@app.get("/api/admin/photos", response_model=List[schemas.PhotoResponse])
-async def get_photos(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), admin: str = Depends(auth.get_current_admin)):
-    photos = db.query(models.Photo).order_by(models.Photo.upload_date.desc()).offset(skip).limit(limit).all()
-    return photos
+
+@app.get("/api/admin/photos", response_model=List[PhotoResponse])
+async def get_photos(admin: str = Depends(auth.get_current_admin)):
+    """List all uploaded photos/videos from Google Drive."""
+    files = drive_service.list_files(_drive, _folder_id)
+    return [
+        {
+            "id": f["id"],
+            "file_name": f["name"],
+            "original_name": f["name"],
+            "file_size": int(f.get("size", 0)),
+            "upload_date": f.get("createdTime", ""),
+            "mime_type": f.get("mimeType", ""),
+        }
+        for f in files
+    ]
+
 
 @app.get("/api/admin/photo/{photo_id}")
-async def get_photo(photo_id: int, token: str, db: Session = Depends(get_db)):
+async def get_photo(photo_id: str, token: str):
+    """Stream a photo/video from Google Drive (token via query param)."""
     admin = auth.get_current_admin(token)
-    photo = db.query(models.Photo).filter(models.Photo.id == photo_id).first()
-    if not photo:
+
+    try:
+        metadata = drive_service.get_file_metadata(_drive, photo_id)
+        buffer = drive_service.download_file(_drive, photo_id)
+    except Exception:
         raise HTTPException(status_code=404, detail="Photo not found")
-    
-    if not os.path.exists(photo.storage_path):
-        raise HTTPException(status_code=404, detail="File not found on disk")
-        
-    return FileResponse(photo.storage_path)
+
+    mime_type = metadata.get("mimeType", "application/octet-stream")
+    return StreamingResponse(buffer, media_type=mime_type)
+
 
 @app.get("/api/admin/download/{photo_id}")
-async def download_photo(photo_id: int, token: str, db: Session = Depends(get_db)):
-    # We accept token from query for easy download link usage
+async def download_photo(photo_id: str, token: str):
+    """Download a photo/video from Google Drive."""
     admin = auth.get_current_admin(token)
-    
-    photo = db.query(models.Photo).filter(models.Photo.id == photo_id).first()
-    if not photo:
+
+    try:
+        metadata = drive_service.get_file_metadata(_drive, photo_id)
+        buffer = drive_service.download_file(_drive, photo_id)
+    except Exception:
         raise HTTPException(status_code=404, detail="Photo not found")
-    
-    if not os.path.exists(photo.storage_path):
-        raise HTTPException(status_code=404, detail="File not found on disk")
-        
-    return FileResponse(
-        photo.storage_path, 
-        media_type='application/octet-stream', 
-        filename=photo.original_name
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{metadata["name"]}"'},
     )
 
+
 @app.delete("/api/admin/photo/{photo_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_photo(photo_id: int, db: Session = Depends(get_db), admin: str = Depends(auth.get_current_admin)):
-    photo = db.query(models.Photo).filter(models.Photo.id == photo_id).first()
-    if not photo:
-        raise HTTPException(status_code=404, detail="Photo not found")
-        
+async def delete_photo(photo_id: str, admin: str = Depends(auth.get_current_admin)):
+    """Delete a photo/video from Google Drive."""
     try:
-        if os.path.exists(photo.storage_path):
-            os.remove(photo.storage_path)
-    except Exception as e:
-        pass
-        
-    db.delete(photo)
-    db.commit()
+        drive_service.delete_file(_drive, photo_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Photo not found")
     return
 
-@app.get("/api/admin/stats", response_model=schemas.StatsResponse)
-async def get_stats(db: Session = Depends(get_db), admin: str = Depends(auth.get_current_admin)):
-    total_uploads = db.query(func.count(models.Photo.id)).scalar() or 0
-    
-    today = datetime.now().date()
-    photos = db.query(models.Photo).all()
-    uploads_today = sum(1 for p in photos if p.upload_date.date() == today)
-    storage_usage = sum(p.file_size for p in photos)
-    
-    return {
-        "total_uploads": total_uploads,
-        "uploads_today": uploads_today,
-        "storage_usage": storage_usage
-    }
+
+@app.get("/api/admin/stats", response_model=StatsResponse)
+async def get_stats(admin: str = Depends(auth.get_current_admin)):
+    """Get upload statistics from Google Drive."""
+    stats = drive_service.get_folder_stats(_drive, _folder_id)
+    return stats
+
 
 if __name__ == "__main__":
     import uvicorn

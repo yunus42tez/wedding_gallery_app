@@ -632,7 +632,7 @@ function AdminDashboard({ uploadedPhotos, onLogout }: {
       
       const data = await photosRes.json();
       setPhotos(data.map((p: any) => ({
-        id: p.id.toString(),
+        id: p.id,
         url: `/api/admin/photo/${p.id}?token=${token}`,
         name: p.original_name,
         size: p.file_size,
