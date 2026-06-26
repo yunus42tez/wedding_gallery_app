@@ -1,7 +1,7 @@
 """
 Google Drive Service Module
 Handles all Google Drive operations: upload, list, download, delete.
-Uses a service account for authentication.
+Uses User Credentials (OAuth2) for authentication to use the user's storage quota.
 """
 
 import os
@@ -11,7 +11,8 @@ import tempfile
 from datetime import datetime
 from typing import Optional
 
-from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
@@ -35,29 +36,33 @@ MIME_TYPES = {
 
 def _get_credentials():
     """
-    Load service account credentials.
-    Priority:
-    1. GOOGLE_SERVICE_ACCOUNT_JSON env var (JSON string - for production)
-    2. Local file at backend/credentials/service_account.json (for development)
+    Load user credentials using Refresh Token from environment variables.
+    Requires GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN.
     """
-    json_str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-    if json_str:
-        info = json.loads(json_str)
-        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    refresh_token = os.getenv("GOOGLE_REFRESH_TOKEN")
 
-    # Fallback to local file
-    cred_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "credentials",
-        "service_account.json",
-    )
-    if os.path.exists(cred_path):
-        return service_account.Credentials.from_service_account_file(cred_path, scopes=SCOPES)
+    if not all([client_id, client_secret, refresh_token]):
+        raise RuntimeError(
+            "Google Drive OAuth2 credentials are not fully set in environment variables. "
+            "Please set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN."
+        )
 
-    raise RuntimeError(
-        "Google Drive credentials not found. "
-        "Set GOOGLE_SERVICE_ACCOUNT_JSON env var or place service_account.json in backend/credentials/"
+    creds = Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=SCOPES
     )
+
+    # Refresh the token if needed
+    if not creds.valid:
+        creds.refresh(Request())
+
+    return creds
 
 
 def get_drive_service():
@@ -66,7 +71,7 @@ def get_drive_service():
     return build("drive", "v3", credentials=creds)
 
 
-def get_or_create_folder(service, folder_name: str = "WeddingPhotos", parent_id: Optional[str] = None) -> str:
+def get_or_create_folder(service, folder_name: str = "Wedday", parent_id: Optional[str] = None) -> str:
     """
     Get existing folder by name or create a new one.
     Returns the folder ID.
