@@ -79,6 +79,10 @@ async def upload_photos(
         try:
             drive_service.upload_file(_drive, tmp_path, file.filename, _folder_id)
             uploaded_count += 1
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Upload failed for {file.filename}: {str(e)}")
         finally:
             os.unlink(tmp_path)
 

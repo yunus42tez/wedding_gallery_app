@@ -231,14 +231,17 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
         body: formData,
       });
 
-      if (!response.ok) throw new Error("Upload failed");
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || "Yükleme başarısız oldu.");
+      }
       
       setProgress(100);
       setState("success");
       onUploaded(validFiles);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Yükleme sırasında hata oluştu. Lütfen tekrar deneyin.");
+      alert(`Hata: ${err.message || "Lütfen tekrar deneyin."}`);
       setState("idle");
     }
   }, [onUploaded]);
