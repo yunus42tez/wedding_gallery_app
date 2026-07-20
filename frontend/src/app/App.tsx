@@ -371,8 +371,8 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
       ref={inputRef}
       type="file"
       multiple
-      accept="image/*,video/*"
-      className="hidden"
+      accept="image/*, video/*"
+      className="sr-only"
       onChange={onInputChange}
     />
   );
