@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Flower petals -->
+  <ellipse cx="32" cy="14" rx="10" ry="14" fill="#E8C4CB" transform="rotate(0 32 32)"/>
+  <ellipse cx="32" cy="14" rx="10" ry="14" fill="#D4A0AC" transform="rotate(72 32 32)"/>
+  <ellipse cx="32" cy="14" rx="10" ry="14" fill="#E8C4CB" transform="rotate(144 32 32)"/>
+  <ellipse cx="32" cy="14" rx="10" ry="14" fill="#D4A0AC" transform="rotate(216 32 32)"/>
+  <ellipse cx="32" cy="14" rx="10" ry="14" fill="#E8C4CB" transform="rotate(288 32 32)"/>
+  <!-- Center -->
+  <circle cx="32" cy="32" r="8" fill="#9D5B6B"/>
+  <circle cx="32" cy="32" r="4" fill="#F7ECF0"/>
+</svg>

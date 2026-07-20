@@ -9,7 +9,7 @@ import {
 /* ─── Types ─────────────────────────────────────────────────── */
 
 type Page = "landing" | "admin-login" | "admin-dashboard";
-type UploadState = "idle" | "dragging" | "uploading" | "success" | "error";
+type UploadState = "idle" | "dragging" | "preparing" | "uploading" | "success" | "error";
 
 interface PhotoEntry {
   id: string;
@@ -230,50 +230,57 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
     setTotalBytes(total);
     setLoadedBytes(0);
     setProgress(0);
-    setState("uploading");
 
-    const formData = new FormData();
-    for (const file of validFiles) {
-      formData.append("files", file);
-    }
+    // Show "preparing" immediately so UI blocks further clicks
+    setState("preparing");
 
-    // Use XMLHttpRequest for real byte-level progress tracking
-    const xhr = new XMLHttpRequest();
-
-    xhr.upload.addEventListener("progress", (e) => {
-      if (e.lengthComputable) {
-        const pct = (e.loaded / e.total) * 100;
-        setLoadedBytes(e.loaded);
-        setProgress(pct);
-
-        // All bytes sent to server → show success immediately
-        // Server will continue uploading to Drive in the background
-        if (e.loaded >= e.total) {
-          setProgress(100);
-          setLoadedBytes(total);
-          setState("success");
-          onUploaded(validFiles);
-        }
+    // Defer heavy FormData construction so the UI can render first
+    setTimeout(() => {
+      const formData = new FormData();
+      for (const file of validFiles) {
+        formData.append("files", file);
       }
-    });
 
-    // Server response handlers — only log, don't show errors
-    // because data is already on the server when progress hits 100%
-    xhr.addEventListener("load", () => {
-      console.log("Server responded:", xhr.status);
-    });
+      setState("uploading");
 
-    xhr.addEventListener("error", () => {
-      console.log("XHR error after upload (data already sent to server)");
-    });
+      // Use XMLHttpRequest for real byte-level progress tracking
+      const xhr = new XMLHttpRequest();
 
-    xhr.addEventListener("timeout", () => {
-      console.log("XHR timeout after upload (data already sent to server)");
-    });
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) {
+          const pct = (e.loaded / e.total) * 100;
+          setLoadedBytes(e.loaded);
+          setProgress(pct);
 
-    xhr.open("POST", "/api/upload");
-    xhr.timeout = 0; // No timeout for large uploads
-    xhr.send(formData);
+          // All bytes sent to server → show success immediately
+          // Server will continue uploading to Drive in the background
+          if (e.loaded >= e.total) {
+            setProgress(100);
+            setLoadedBytes(total);
+            setState("success");
+            onUploaded(validFiles);
+          }
+        }
+      });
+
+      // Server response handlers — only log, don't show errors
+      // because data is already on the server when progress hits 100%
+      xhr.addEventListener("load", () => {
+        console.log("Server responded:", xhr.status);
+      });
+
+      xhr.addEventListener("error", () => {
+        console.log("XHR error after upload (data already sent to server)");
+      });
+
+      xhr.addEventListener("timeout", () => {
+        console.log("XHR timeout after upload (data already sent to server)");
+      });
+
+      xhr.open("POST", "/api/upload");
+      xhr.timeout = 0; // No timeout for large uploads
+      xhr.send(formData);
+    }, 50);
   }, [onUploaded]);
 
   const retryUpload = useCallback(() => {
@@ -361,6 +368,31 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
           >
             İptal
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "preparing") {
+    return (
+      <div className="flex flex-col items-center gap-6 py-10 px-4">
+        <div className="relative w-20 h-20">
+          <svg className="spinner absolute inset-0" viewBox="0 0 80 80" width={80} height={80}>
+            <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(196,151,60,0.15)" strokeWidth="4" />
+            <circle cx="40" cy="40" r="34" fill="none" stroke="#9D5B6B" strokeWidth="4"
+              strokeDasharray="60 150" strokeLinecap="round" />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Camera size={22} style={{ color: "#9D5B6B" }} />
+          </div>
+        </div>
+        <div className="text-center space-y-2">
+          <p className="text-sm font-medium" style={{ color: "#6B3A48" }}>
+            {fileCount} dosya hazırlanıyor…
+          </p>
+          <p className="text-xs" style={{ color: "#8B6470" }}>
+            Lütfen bekleyiniz · {formatBytes(totalBytes)}
+          </p>
         </div>
       </div>
     );
