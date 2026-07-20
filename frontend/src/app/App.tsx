@@ -216,78 +216,97 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
   const [errorMessage, setErrorMessage] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const lastFilesRef = useRef<File[]>([]);
+  const isProcessingRef = useRef(false); // Synchronous guard against double-clicks
+
+  const startUpload = useCallback((validFiles: File[], total: number) => {
+    const formData = new FormData();
+    for (const file of validFiles) {
+      formData.append("files", file);
+    }
+
+    setState("uploading");
+
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) {
+        const pct = (e.loaded / e.total) * 100;
+        setLoadedBytes(e.loaded);
+        setProgress(pct);
+
+        if (e.loaded >= e.total) {
+          setProgress(100);
+          setLoadedBytes(total);
+          setState("success");
+          isProcessingRef.current = false;
+          onUploaded(validFiles);
+        }
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      console.log("Server responded:", xhr.status);
+    });
+    xhr.addEventListener("error", () => {
+      console.log("XHR error after upload (data already sent to server)");
+    });
+    xhr.addEventListener("timeout", () => {
+      console.log("XHR timeout after upload (data already sent to server)");
+    });
+
+    xhr.open("POST", "/api/upload");
+    xhr.timeout = 0;
+    xhr.send(formData);
+  }, [onUploaded]);
 
   const handleFiles = useCallback((files: File[]) => {
+    // Synchronous guard — prevents double processing
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+
     const validFiles = files.filter(f => f.type.startsWith("image/") || f.type.startsWith("video/"));
-    if (validFiles.length === 0) return;
+    if (validFiles.length === 0) {
+      isProcessingRef.current = false;
+      return;
+    }
 
     lastFilesRef.current = validFiles;
     setFileCount(validFiles.length);
     setErrorMessage("");
 
-    // Calculate total size
     const total = validFiles.reduce((sum, f) => sum + f.size, 0);
     setTotalBytes(total);
     setLoadedBytes(0);
     setProgress(0);
-
-    // Show "preparing" immediately so UI blocks further clicks
     setState("preparing");
 
-    // Defer heavy FormData construction so the UI can render first
-    setTimeout(() => {
-      const formData = new FormData();
-      for (const file of validFiles) {
-        formData.append("files", file);
-      }
-
-      setState("uploading");
-
-      // Use XMLHttpRequest for real byte-level progress tracking
-      const xhr = new XMLHttpRequest();
-
-      xhr.upload.addEventListener("progress", (e) => {
-        if (e.lengthComputable) {
-          const pct = (e.loaded / e.total) * 100;
-          setLoadedBytes(e.loaded);
-          setProgress(pct);
-
-          // All bytes sent to server → show success immediately
-          // Server will continue uploading to Drive in the background
-          if (e.loaded >= e.total) {
-            setProgress(100);
-            setLoadedBytes(total);
-            setState("success");
-            onUploaded(validFiles);
-          }
-        }
+    // Use requestAnimationFrame to ensure "preparing" UI is painted
+    // before the heavy FormData construction blocks the main thread
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        startUpload(validFiles, total);
       });
-
-      // Server response handlers — only log, don't show errors
-      // because data is already on the server when progress hits 100%
-      xhr.addEventListener("load", () => {
-        console.log("Server responded:", xhr.status);
-      });
-
-      xhr.addEventListener("error", () => {
-        console.log("XHR error after upload (data already sent to server)");
-      });
-
-      xhr.addEventListener("timeout", () => {
-        console.log("XHR timeout after upload (data already sent to server)");
-      });
-
-      xhr.open("POST", "/api/upload");
-      xhr.timeout = 0; // No timeout for large uploads
-      xhr.send(formData);
-    }, 50);
-  }, [onUploaded]);
+    });
+  }, [startUpload]);
 
   const retryUpload = useCallback(() => {
     if (lastFilesRef.current.length > 0) {
+      isProcessingRef.current = false; // Reset guard for retry
       handleFiles(lastFilesRef.current);
     }
   }, [handleFiles]);
+
+  const resetState = useCallback(() => {
+    setState("idle");
+    setProgress(0);
+    setFileCount(0);
+    setTotalBytes(0);
+    setLoadedBytes(0);
+    setErrorMessage("");
+    isProcessingRef.current = false;
+    // Reset file input so same files can be re-selected
+    if (inputRef.current) inputRef.current.value = "";
+  }, []);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -303,12 +322,32 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
   const onDragLeave = useCallback(() => setState("idle"), []);
 
   const onInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) handleFiles(Array.from(e.target.files));
+    if (e.target.files && e.target.files.length > 0) {
+      handleFiles(Array.from(e.target.files));
+    }
   }, [handleFiles]);
+
+  const openFilePicker = useCallback(() => {
+    if (isProcessingRef.current) return; // Block if already processing
+    inputRef.current?.click();
+  }, []);
+
+  // File input is ALWAYS in the DOM — never unmounted
+  const fileInput = (
+    <input
+      ref={inputRef}
+      type="file"
+      multiple
+      accept="image/*,video/*"
+      className="hidden"
+      onChange={onInputChange}
+    />
+  );
 
   if (state === "success") {
     return (
       <div className="flex flex-col items-center gap-6 py-10">
+        {fileInput}
         <div className="check-svg">
           <svg viewBox="0 0 80 80" width={90} height={90}>
             <circle cx="40" cy="40" r="36" fill="none" stroke="#9D5B6B" strokeWidth="3" opacity="0.25" />
@@ -325,7 +364,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
           </p>
         </div>
         <button
-          onClick={() => { setState("idle"); setProgress(0); setFileCount(0); setTotalBytes(0); setLoadedBytes(0); }}
+          onClick={resetState}
           className="mt-2 px-6 py-2.5 rounded-full text-sm font-medium border transition-all duration-300 hover:shadow-md"
           style={{ borderColor: "rgba(196,151,60,0.5)", color: "#9D5B6B", background: "rgba(157,91,107,0.06)" }}
         >
@@ -338,6 +377,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
   if (state === "error") {
     return (
       <div className="flex flex-col items-center gap-5 py-10 px-4">
+        {fileInput}
         <div className="w-16 h-16 rounded-full flex items-center justify-center"
           style={{ background: "rgba(192,57,43,0.08)" }}>
           <X size={28} style={{ color: "#C0392B" }} />
@@ -362,7 +402,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
             Tekrar Dene
           </button>
           <button
-            onClick={() => { setState("idle"); setProgress(0); setFileCount(0); setTotalBytes(0); setLoadedBytes(0); setErrorMessage(""); }}
+            onClick={resetState}
             className="px-6 py-2.5 rounded-full text-sm font-medium border transition-all duration-300 hover:shadow-md"
             style={{ borderColor: "rgba(157,91,107,0.35)", color: "#9D5B6B", background: "rgba(157,91,107,0.06)" }}
           >
@@ -376,6 +416,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
   if (state === "preparing") {
     return (
       <div className="flex flex-col items-center gap-6 py-10 px-4">
+        {fileInput}
         <div className="relative w-20 h-20">
           <svg className="spinner absolute inset-0" viewBox="0 0 80 80" width={80} height={80}>
             <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(196,151,60,0.15)" strokeWidth="4" />
@@ -401,6 +442,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
   if (state === "uploading") {
     return (
       <div className="flex flex-col items-center gap-6 py-10 px-4">
+        {fileInput}
         <div className="relative w-20 h-20">
           <svg className="spinner absolute inset-0" viewBox="0 0 80 80" width={80} height={80}>
             <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(196,151,60,0.15)" strokeWidth="4" />
@@ -435,7 +477,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
       onDrop={onDrop}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
-      onClick={() => inputRef.current?.click()}
+      onClick={openFilePicker}
       role="button"
       aria-label="Medya yükleme alanı"
       className="relative cursor-pointer rounded-2xl border-2 border-dashed transition-all duration-300 py-14 px-8 flex flex-col items-center gap-5 group"
@@ -446,14 +488,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
           : "rgba(250,247,242,0.6)",
       }}
     >
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        accept="image/*,video/*"
-        className="hidden"
-        onChange={onInputChange}
-      />
+      {fileInput}
 
       <div
         className="w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 group-hover:scale-105"
@@ -472,7 +507,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
       </div>
 
       <button
-        onClick={e => { e.stopPropagation(); inputRef.current?.click(); }}
+        onClick={e => { e.stopPropagation(); openFilePicker(); }}
         className="mt-1 px-8 py-3 rounded-full font-medium text-sm text-white transition-all duration-300 hover:shadow-lg hover:scale-105 active:scale-100"
         style={{ background: "linear-gradient(135deg, #9D5B6B 0%, #7A3F50 100%)" }}
       >
