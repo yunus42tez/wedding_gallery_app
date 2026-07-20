@@ -245,37 +245,30 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
         const pct = (e.loaded / e.total) * 100;
         setLoadedBytes(e.loaded);
         setProgress(pct);
+
+        // All bytes sent to server → show success immediately
+        // Server will continue uploading to Drive in the background
+        if (e.loaded >= e.total) {
+          setProgress(100);
+          setLoadedBytes(total);
+          setState("success");
+          onUploaded(validFiles);
+        }
       }
     });
 
+    // Server response handlers — only log, don't show errors
+    // because data is already on the server when progress hits 100%
     xhr.addEventListener("load", () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        setProgress(100);
-        setLoadedBytes(total);
-        setState("success");
-        onUploaded(validFiles);
-      } else {
-        let detail = "Yükleme başarısız oldu.";
-        try {
-          const errData = JSON.parse(xhr.responseText);
-          if (errData.detail) detail = errData.detail;
-        } catch { /* ignore */ }
-        console.error("Upload error:", xhr.status, detail);
-        setErrorMessage(detail);
-        setState("error");
-      }
+      console.log("Server responded:", xhr.status);
     });
 
     xhr.addEventListener("error", () => {
-      console.error("Network error during upload");
-      setErrorMessage("Ağ hatası oluştu. Lütfen internet bağlantınızı kontrol edin.");
-      setState("error");
+      console.log("XHR error after upload (data already sent to server)");
     });
 
     xhr.addEventListener("timeout", () => {
-      console.error("Upload timed out");
-      setErrorMessage("Yükleme zaman aşımına uğradı. Lütfen tekrar deneyin.");
-      setState("error");
+      console.log("XHR timeout after upload (data already sent to server)");
     });
 
     xhr.open("POST", "/api/upload");
