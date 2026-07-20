@@ -172,3 +172,4 @@ uploads/
 # Google Drive credentials (NEVER commit these)
 backend/credentials/
 service_account*.json
+credentials.json

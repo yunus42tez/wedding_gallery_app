@@ -211,40 +211,83 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
   const [state, setState] = useState<UploadState>("idle");
   const [progress, setProgress] = useState(0);
   const [fileCount, setFileCount] = useState(0);
+  const [totalBytes, setTotalBytes] = useState(0);
+  const [loadedBytes, setLoadedBytes] = useState(0);
+  const [errorMessage, setErrorMessage] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const lastFilesRef = useRef<File[]>([]);
 
-  const handleFiles = useCallback(async (files: File[]) => {
+  const handleFiles = useCallback((files: File[]) => {
     const validFiles = files.filter(f => f.type.startsWith("image/") || f.type.startsWith("video/"));
     if (validFiles.length === 0) return;
+
+    lastFilesRef.current = validFiles;
     setFileCount(validFiles.length);
+    setErrorMessage("");
+
+    // Calculate total size
+    const total = validFiles.reduce((sum, f) => sum + f.size, 0);
+    setTotalBytes(total);
+    setLoadedBytes(0);
+    setProgress(0);
     setState("uploading");
-    setProgress(10); // Fake progress to start
 
     const formData = new FormData();
     for (const file of validFiles) {
       formData.append("files", file);
     }
 
-    try {
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+    // Use XMLHttpRequest for real byte-level progress tracking
+    const xhr = new XMLHttpRequest();
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || "Yükleme başarısız oldu.");
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) {
+        const pct = (e.loaded / e.total) * 100;
+        setLoadedBytes(e.loaded);
+        setProgress(pct);
       }
-      
-      setProgress(100);
-      setState("success");
-      onUploaded(validFiles);
-    } catch (err: any) {
-      console.error(err);
-      alert(`Hata: ${err.message || "Lütfen tekrar deneyin."}`);
-      setState("idle");
-    }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        setProgress(100);
+        setLoadedBytes(total);
+        setState("success");
+        onUploaded(validFiles);
+      } else {
+        let detail = "Yükleme başarısız oldu.";
+        try {
+          const errData = JSON.parse(xhr.responseText);
+          if (errData.detail) detail = errData.detail;
+        } catch { /* ignore */ }
+        console.error("Upload error:", xhr.status, detail);
+        setErrorMessage(detail);
+        setState("error");
+      }
+    });
+
+    xhr.addEventListener("error", () => {
+      console.error("Network error during upload");
+      setErrorMessage("Ağ hatası oluştu. Lütfen internet bağlantınızı kontrol edin.");
+      setState("error");
+    });
+
+    xhr.addEventListener("timeout", () => {
+      console.error("Upload timed out");
+      setErrorMessage("Yükleme zaman aşımına uğradı. Lütfen tekrar deneyin.");
+      setState("error");
+    });
+
+    xhr.open("POST", "/api/upload");
+    xhr.timeout = 0; // No timeout for large uploads
+    xhr.send(formData);
   }, [onUploaded]);
+
+  const retryUpload = useCallback(() => {
+    if (lastFilesRef.current.length > 0) {
+      handleFiles(lastFilesRef.current);
+    }
+  }, [handleFiles]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -278,16 +321,54 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
             Medya başarıyla yüklendi.
           </p>
           <p className="text-sm" style={{ color: "#8B6470" }}>
-            Teşekkür ederiz. Anılarınız güvende. 🤍
+            {fileCount} dosya · {formatBytes(totalBytes)} gönderildi 🤍
           </p>
         </div>
         <button
-          onClick={() => { setState("idle"); setProgress(0); setFileCount(0); }}
+          onClick={() => { setState("idle"); setProgress(0); setFileCount(0); setTotalBytes(0); setLoadedBytes(0); }}
           className="mt-2 px-6 py-2.5 rounded-full text-sm font-medium border transition-all duration-300 hover:shadow-md"
           style={{ borderColor: "rgba(196,151,60,0.5)", color: "#9D5B6B", background: "rgba(157,91,107,0.06)" }}
         >
           Başka Medya Yükle
         </button>
+      </div>
+    );
+  }
+
+  if (state === "error") {
+    return (
+      <div className="flex flex-col items-center gap-5 py-10 px-4">
+        <div className="w-16 h-16 rounded-full flex items-center justify-center"
+          style={{ background: "rgba(192,57,43,0.08)" }}>
+          <X size={28} style={{ color: "#C0392B" }} />
+        </div>
+        <div className="text-center space-y-2">
+          <p className="text-lg font-medium" style={{ fontFamily: "Playfair Display, serif", color: "#2A1A1F" }}>
+            Yükleme Hatası
+          </p>
+          <p className="text-sm max-w-xs" style={{ color: "#8B6470" }}>
+            {errorMessage}
+          </p>
+          <p className="text-xs" style={{ color: "#B0808E" }}>
+            {formatBytes(loadedBytes)} / {formatBytes(totalBytes)} gönderildi
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={retryUpload}
+            className="px-6 py-2.5 rounded-full text-sm font-medium text-white transition-all duration-300 hover:shadow-lg hover:scale-105"
+            style={{ background: "linear-gradient(135deg, #9D5B6B 0%, #7A3F50 100%)" }}
+          >
+            Tekrar Dene
+          </button>
+          <button
+            onClick={() => { setState("idle"); setProgress(0); setFileCount(0); setTotalBytes(0); setLoadedBytes(0); setErrorMessage(""); }}
+            className="px-6 py-2.5 rounded-full text-sm font-medium border transition-all duration-300 hover:shadow-md"
+            style={{ borderColor: "rgba(157,91,107,0.35)", color: "#9D5B6B", background: "rgba(157,91,107,0.06)" }}
+          >
+            İptal
+          </button>
+        </div>
       </div>
     );
   }
@@ -309,13 +390,16 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
           <p className="text-sm font-medium" style={{ color: "#6B3A48" }}>
             {fileCount} dosya yükleniyor…
           </p>
-          <div className="relative h-2 rounded-full overflow-hidden" style={{ background: "rgba(157,91,107,0.12)" }}>
+          <div className="relative h-2.5 rounded-full overflow-hidden" style={{ background: "rgba(157,91,107,0.12)" }}>
             <div
-              className="absolute inset-y-0 left-0 rounded-full progress-bar-fill transition-all duration-200"
+              className="absolute inset-y-0 left-0 rounded-full progress-bar-fill transition-all duration-300 ease-out"
               style={{ width: `${progress}%` }}
             />
           </div>
-          <p className="text-xs" style={{ color: "#8B6470" }}>%{Math.round(progress)}</p>
+          <div className="flex items-center justify-between text-xs" style={{ color: "#8B6470" }}>
+            <span>{formatBytes(loadedBytes)} / {formatBytes(totalBytes)}</span>
+            <span className="font-medium" style={{ color: "#6B3A48" }}>%{Math.round(progress)}</span>
+          </div>
         </div>
       </div>
     );
