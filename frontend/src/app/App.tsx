@@ -259,6 +259,8 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
     xhr.send(formData);
   }, [onUploaded]);
 
+  const MAX_FILES = 50;
+
   const handleFiles = useCallback((files: File[]) => {
     // Synchronous guard — prevents double processing
     if (isProcessingRef.current) return;
@@ -268,6 +270,16 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
     if (validFiles.length === 0) {
       isProcessingRef.current = false;
       setState("idle");
+      return;
+    }
+
+    // Enforce maximum file count limit
+    if (validFiles.length > MAX_FILES) {
+      isProcessingRef.current = false;
+      setFileCount(validFiles.length);
+      setErrorMessage(`Tek seferde en fazla ${MAX_FILES} dosya seçebilirsiniz. ${validFiles.length} dosya seçtiniz.`);
+      setState("error");
+      if (inputRef.current) inputRef.current.value = "";
       return;
     }
 
