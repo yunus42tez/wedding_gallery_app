@@ -267,6 +267,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
     const validFiles = files.filter(f => f.type.startsWith("image/") || f.type.startsWith("video/"));
     if (validFiles.length === 0) {
       isProcessingRef.current = false;
+      setState("idle");
       return;
     }
 
@@ -278,7 +279,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
     setTotalBytes(total);
     setLoadedBytes(0);
     setProgress(0);
-    setState("preparing");
+    setState("preparing"); // Re-trigger preparing with actual counts
 
     // Use requestAnimationFrame to ensure "preparing" UI is painted
     // before the heavy FormData construction blocks the main thread
@@ -329,7 +330,39 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
 
   const openFilePicker = useCallback(() => {
     if (isProcessingRef.current) return; // Block if already processing
+    
+    // Immediately show preparing state to give instant feedback.
+    // This blocks the user from clicking again while the browser asynchronously processes 
+    // the files after the OS picker closes.
+    setState("preparing");
+    setFileCount(0);
+    setTotalBytes(0);
+    
+    // Fallback: If 30 seconds pass after returning to the window and nothing happens, revert to idle
+    const handleFocus = () => {
+      window.removeEventListener('focus', handleFocus);
+      setTimeout(() => {
+        if (!isProcessingRef.current) {
+          setState("idle");
+        }
+      }, 30000);
+    };
+    window.addEventListener('focus', handleFocus);
+
     inputRef.current?.click();
+  }, []);
+
+  // Handle native file picker cancellation
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const handleCancel = () => {
+      if (!isProcessingRef.current) {
+        setState("idle");
+      }
+    };
+    el.addEventListener("cancel", handleCancel);
+    return () => el.removeEventListener("cancel", handleCancel);
   }, []);
 
   // File input is ALWAYS in the DOM — never unmounted
@@ -429,10 +462,10 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
         </div>
         <div className="text-center space-y-2">
           <p className="text-sm font-medium" style={{ color: "#6B3A48" }}>
-            {fileCount} dosya hazırlanıyor…
+            {fileCount > 0 ? `${fileCount} dosya hazırlanıyor…` : "İçerikler hazırlanıyor…"}
           </p>
           <p className="text-xs" style={{ color: "#8B6470" }}>
-            Lütfen bekleyiniz · {formatBytes(totalBytes)}
+            {fileCount > 0 ? `Lütfen bekleyiniz · ${formatBytes(totalBytes)}` : "Lütfen bekleyiniz"}
           </p>
         </div>
       </div>
