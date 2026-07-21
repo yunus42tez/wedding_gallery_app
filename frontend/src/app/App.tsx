@@ -9,7 +9,7 @@ import {
 /* ─── Types ─────────────────────────────────────────────────── */
 
 type Page = "landing" | "admin-login" | "admin-dashboard";
-type UploadState = "idle" | "dragging" | "preparing" | "uploading" | "success" | "error" | "limit-exceeded";
+type UploadState = "idle" | "dragging" | "preparing" | "uploading" | "success" | "error";
 
 interface PhotoEntry {
   id: string;
@@ -277,8 +277,9 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
     if (validFiles.length > MAX_FILES) {
       isProcessingRef.current = false;
       setFileCount(validFiles.length);
-      setErrorMessage(`Tek seferde en fazla ${MAX_FILES} içerik yüklenebilir. ${validFiles.length} içerik seçtiniz, lütfen ${validFiles.length - MAX_FILES} tanesini kaldırın.`);
-      setState("limit-exceeded");
+      setErrorMessage(`Tek seferde en fazla ${MAX_FILES} dosya seçebilirsiniz. ${validFiles.length} dosya seçtiniz.`);
+      setState("error");
+      if (inputRef.current) inputRef.current.value = "";
       return;
     }
 
@@ -418,47 +419,8 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
     );
   }
 
-  if (state === "limit-exceeded") {
-    return (
-      <div className="flex flex-col items-center gap-5 py-10 px-4">
-        {fileInput}
-        <div className="w-16 h-16 rounded-full flex items-center justify-center"
-          style={{ background: "rgba(196,151,60,0.10)" }}>
-          <svg viewBox="0 0 24 24" width={28} height={28} fill="none" stroke="#C4972C" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-        </div>
-        <div className="text-center space-y-2">
-          <p className="text-lg font-medium" style={{ fontFamily: "Playfair Display, serif", color: "#2A1A1F" }}>
-            Çok Fazla İçerik Seçildi
-          </p>
-          <p className="text-sm max-w-xs" style={{ color: "#8B6470" }}>
-            {errorMessage}
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => { setState("preparing"); openFilePicker(); }}
-            className="px-6 py-2.5 rounded-full text-sm font-medium text-white transition-all duration-300 hover:shadow-lg hover:scale-105"
-            style={{ background: "linear-gradient(135deg, #9D5B6B 0%, #7A3F50 100%)" }}
-          >
-            Galeriye Geri Dön
-          </button>
-          <button
-            onClick={resetState}
-            className="px-6 py-2.5 rounded-full text-sm font-medium border transition-all duration-300 hover:shadow-md"
-            style={{ borderColor: "rgba(157,91,107,0.35)", color: "#9D5B6B", background: "rgba(157,91,107,0.06)" }}
-          >
-            İptal
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (state === "error") {
+    const isLimitError = totalBytes === 0 && fileCount > MAX_FILES;
     return (
       <div className="flex flex-col items-center gap-5 py-10 px-4">
         {fileInput}
@@ -468,23 +430,35 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
         </div>
         <div className="text-center space-y-2">
           <p className="text-lg font-medium" style={{ fontFamily: "Playfair Display, serif", color: "#2A1A1F" }}>
-            Yükleme Hatası
+            {isLimitError ? "Dosya Sınırı Aşıldı" : "Yükleme Hatası"}
           </p>
           <p className="text-sm max-w-xs" style={{ color: "#8B6470" }}>
             {errorMessage}
           </p>
-          <p className="text-xs" style={{ color: "#B0808E" }}>
-            {formatBytes(loadedBytes)} / {formatBytes(totalBytes)} gönderildi
-          </p>
+          {!isLimitError && (
+            <p className="text-xs" style={{ color: "#B0808E" }}>
+              {formatBytes(loadedBytes)} / {formatBytes(totalBytes)} gönderildi
+            </p>
+          )}
         </div>
         <div className="flex gap-3">
-          <button
-            onClick={retryUpload}
-            className="px-6 py-2.5 rounded-full text-sm font-medium text-white transition-all duration-300 hover:shadow-lg hover:scale-105"
-            style={{ background: "linear-gradient(135deg, #9D5B6B 0%, #7A3F50 100%)" }}
-          >
-            Tekrar Dene
-          </button>
+          {isLimitError ? (
+            <button
+              onClick={() => { resetState(); setTimeout(() => openFilePicker(), 100); }}
+              className="px-6 py-2.5 rounded-full text-sm font-medium text-white transition-all duration-300 hover:shadow-lg hover:scale-105"
+              style={{ background: "linear-gradient(135deg, #9D5B6B 0%, #7A3F50 100%)" }}
+            >
+              Galeriye Geri Dön
+            </button>
+          ) : (
+            <button
+              onClick={retryUpload}
+              className="px-6 py-2.5 rounded-full text-sm font-medium text-white transition-all duration-300 hover:shadow-lg hover:scale-105"
+              style={{ background: "linear-gradient(135deg, #9D5B6B 0%, #7A3F50 100%)" }}
+            >
+              Tekrar Dene
+            </button>
+          )}
           <button
             onClick={resetState}
             className="px-6 py-2.5 rounded-full text-sm font-medium border transition-all duration-300 hover:shadow-md"
@@ -590,7 +564,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
         </p>
       </div>
 
-      <p className="text-xs mt-1" style={{ color: "#B0808E" }}>
+      <p className="text-xs text-center" style={{ color: "#9D5B6B", opacity: 0.85 }}>
         Tek seferde en fazla 50 içerik yüklenebilir
       </p>
 
