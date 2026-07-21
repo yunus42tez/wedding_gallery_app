@@ -22,8 +22,11 @@ import backend.auth as auth
 import backend.drive_service as drive_service
 
 # ── Google Drive setup ───────────────────────────────────────────
-_drive = drive_service.get_drive_service()
-_folder_id = drive_service.get_or_create_folder(_drive, folder_name="Wedday")
+# Only cache the folder ID (a plain string, safe to share across threads).
+# The Drive service object is NOT thread-safe, so each request creates its own.
+_init_drive = drive_service.get_drive_service()
+_folder_id = drive_service.get_or_create_folder(_init_drive, folder_name="Wedday")
+del _init_drive  # discard to prevent accidental reuse
 
 app = FastAPI(title="Wedding Photo Upload App")
 
@@ -64,6 +67,8 @@ def upload_photos(
     files: List[UploadFile] = File(...),
 ):
     """Upload photos/videos to Google Drive."""
+    # Create a fresh Drive service for this request (thread-safe)
+    svc = drive_service.get_drive_service()
     uploaded_count = 0
 
     for file in files:
@@ -77,7 +82,7 @@ def upload_photos(
             tmp_path = tmp.name
 
         try:
-            drive_service.upload_file(_drive, tmp_path, file.filename, _folder_id)
+            drive_service.upload_file(svc, tmp_path, file.filename, _folder_id)
             uploaded_count += 1
         except Exception as e:
             import traceback
