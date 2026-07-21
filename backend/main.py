@@ -59,7 +59,7 @@ class StatsResponse(BaseModel):
 # ── Endpoints ────────────────────────────────────────────────────
 
 @app.post("/api/upload", status_code=status.HTTP_201_CREATED)
-async def upload_photos(
+def upload_photos(
     request: Request,
     files: List[UploadFile] = File(...),
 ):
