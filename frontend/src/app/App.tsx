@@ -214,6 +214,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
   const [totalBytes, setTotalBytes] = useState(0);
   const [loadedBytes, setLoadedBytes] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
+  const [showLimitPopup, setShowLimitPopup] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastFilesRef = useRef<File[]>([]);
   const isProcessingRef = useRef(false); // Synchronous guard against double-clicks
@@ -531,6 +532,7 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
   }
 
   return (
+    <>
     <div
       onDrop={onDrop}
       onDragOver={onDragOver}
@@ -564,12 +566,10 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
         </p>
       </div>
 
-      <p className="text-xs text-center" style={{ color: "#9D5B6B", opacity: 0.85 }}>
-        Tek seferde en fazla 50 içerik yüklenebilir
-      </p>
+
 
       <button
-        onClick={e => { e.stopPropagation(); openFilePicker(); }}
+        onClick={e => { e.stopPropagation(); setShowLimitPopup(true); }}
         className="mt-1 px-8 py-3 rounded-full font-medium text-sm text-white transition-all duration-300 hover:shadow-lg hover:scale-105 active:scale-100"
         style={{ background: "linear-gradient(135deg, #9D5B6B 0%, #7A3F50 100%)" }}
       >
@@ -585,6 +585,43 @@ function UploadSection({ onUploaded }: { onUploaded: (files: File[]) => void }) 
         </div>
       )}
     </div>
+
+    {/* Limit popup */}
+    {showLimitPopup && (
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ background: "rgba(42,26,31,0.45)", backdropFilter: "blur(6px)" }}
+        onClick={() => setShowLimitPopup(false)}
+      >
+        <div
+          className="relative mx-4 w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center"
+          style={{ background: "linear-gradient(160deg, #FFFBFC 0%, #FDF7F8 45%, #F7ECF0 100%)" }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div
+            className="mx-auto mb-4 w-14 h-14 rounded-full flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg, #F7ECF0 0%, #E8C4CB 100%)" }}
+          >
+            <Camera size={24} style={{ color: "#9D5B6B" }} />
+          </div>
+          <p className="text-base font-medium mb-1" style={{ fontFamily: "Playfair Display, serif", color: "#2A1A1F" }}>
+            Dosya Limiti
+          </p>
+          <p className="text-sm mb-6" style={{ color: "#8B6470" }}>
+            Tek seferde en fazla 50 içerik yüklenebilir.
+          </p>
+          <button
+            onClick={() => { setShowLimitPopup(false); openFilePicker(); }}
+            className="px-10 py-2.5 rounded-full font-medium text-sm text-white transition-all duration-300 hover:shadow-lg hover:scale-105 active:scale-100"
+            style={{ background: "linear-gradient(135deg, #9D5B6B 0%, #7A3F50 100%)" }}
+          >
+            Tamam
+          </button>
+        </div>
+      </div>
+    )}
+
+    </>
   );
 }
 
